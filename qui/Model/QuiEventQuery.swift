@@ -31,8 +31,13 @@ struct QuiEventQuery: EntityQuery, Sendable {
       let events = fetchedEvents ?? []
       
       // Deduplicate events based on their unique ID
-      let uniqueEvents = Array(Set(events.map { $0.id })).compactMap { id in
-        events.first { $0.id == id }
+      var seenIds = Set<UUID>()
+      let uniqueEvents = events.compactMap { event -> QuiEvent? in
+        if seenIds.contains(event.id) {
+          return nil // Skip duplicate
+        }
+        seenIds.insert(event.id)
+        return event
       }.sorted { $0.date < $1.date }
       
       return uniqueEvents.map { event -> QuiEventEntity in
@@ -49,8 +54,13 @@ struct QuiEventQuery: EntityQuery, Sendable {
       let events = fetchedEvents ?? []
       
       // Deduplicate events based on their unique ID
-      let uniqueEvents = Array(Set(events.map { $0.id })).compactMap { id in
-        events.first { $0.id == id }
+      var seenIds = Set<UUID>()
+      let uniqueEvents = events.compactMap { event -> QuiEvent? in
+        if seenIds.contains(event.id) {
+          return nil // Skip duplicate
+        }
+        seenIds.insert(event.id)
+        return event
       }.sorted { $0.date < $1.date }
       
       if let first = uniqueEvents.first {

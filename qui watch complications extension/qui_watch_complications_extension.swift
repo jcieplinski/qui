@@ -70,9 +70,25 @@ struct qui_watch_complications_extensionEntryView : View {
       let descriptor = FetchDescriptor<QuiEvent>()
       let fetchedEvents = try modelContext.fetch(descriptor).sorted { $0.date < $1.date }
       
-      // Deduplicate events based on their unique ID
-      events = Array(Set(fetchedEvents.map { $0.id })).compactMap { id in
-        fetchedEvents.first { $0.id == id }
+      // Enhanced deduplication: first by ID, then by title/date/location
+      var seenIds = Set<UUID>()
+      var seenTitleDateLocation = Set<String>()
+      
+      events = fetchedEvents.compactMap { event -> QuiEvent? in
+        // Check for ID duplicates
+        if seenIds.contains(event.id) {
+          return nil // Skip duplicate
+        }
+        
+        // Check for title/date/location duplicates (in case UUID parsing failed)
+        let titleDateLocationKey = "\(event.title)|\(event.date.timeIntervalSince1970)|\(event.location)"
+        if seenTitleDateLocation.contains(titleDateLocationKey) {
+          return nil // Skip duplicate
+        }
+        
+        seenIds.insert(event.id)
+        seenTitleDateLocation.insert(titleDateLocationKey)
+        return event
       }.sorted { $0.date < $1.date }
     } catch {
       print("Error loading events: \(error)")

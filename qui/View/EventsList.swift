@@ -38,13 +38,19 @@ struct EventsList: View {
   
   private func loadEvents() async {
     do {
-      let descriptor = FetchDescriptor<QuiEvent>()
-      let fetchedEvents = try modelContext.fetch(descriptor).sorted { $0.date < $1.date }
+      let handler = QuiEventHandler(modelContainer: modelContext.container)
+      let eventIds = try await handler.fetchEventsFromDatabaseWithIds()
       
-      // Deduplicate events based on their unique ID
-      events = Array(Set(fetchedEvents.map { $0.id })).compactMap { id in
+      // Fetch all events with these IDs in a single query
+      let descriptor = FetchDescriptor<QuiEvent>(predicate: #Predicate<QuiEvent> { event in
+        eventIds.contains(event.id)
+      })
+      let fetchedEvents = try modelContext.fetch(descriptor)
+      
+      // Sort them in the same order as the IDs
+      events = eventIds.compactMap { id in
         fetchedEvents.first { $0.id == id }
-      }.sorted { $0.date < $1.date }
+      }
       
       updateFilteredEvents()
     } catch {

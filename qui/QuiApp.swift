@@ -54,7 +54,19 @@ struct QuiApp: App {
           Task {
             do {
               let cache = imageCache ?? defaultCache
-              try await QuiEventHandler(modelContainer: sharedModelContainer).updateFromWeb(imageCache: cache)
+              let handler = QuiEventHandler(modelContainer: sharedModelContainer)
+              
+#if DEBUG
+              // Debug the database in debug mode
+              do {
+                try await handler.debugDatabase()
+                try await handler.forceCleanup()
+              } catch {
+                Logger.swiftData.error("Debug error: \(error)")
+              }
+#endif
+              
+              try await handler.updateFromWeb(imageCache: cache)
               await MainActor.run {
                 lastFetch = Date()
               }

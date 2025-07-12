@@ -23,6 +23,7 @@ struct ContentView: View {
   @State private var isRefreshing: Bool = false
   @State private var isBackgroundRefreshing: Bool = false
   @State private var isInitialFetching: Bool = false
+  @State private var lastBackgroundRefreshAttempt: Date = Date.distantPast
   @AppStorage("lastUpdateDate") private var lastUpdateDate: Date = Date.distantPast
   
   let dateFormatter = DateFormatter()
@@ -49,18 +50,11 @@ struct ContentView: View {
   }
   
   var lastUpdateText: String {
-    var text = ""
     if lastUpdateDate == Date.distantPast {
-      text = "Last Updated: Never"
+      return "Last Updated: Never"
     } else {
-      text = "Last Updated: \(lastUpdateDate.formatted(date: .abbreviated, time: .omitted))"
+      return "Last Updated: \(lastUpdateDate.formatted(date: .abbreviated, time: .omitted))"
     }
-    
-    if isBackgroundRefreshing {
-      text += " (updating...)"
-    }
-    
-    return text
   }
   
   var body: some View {
@@ -115,9 +109,19 @@ struct ContentView: View {
         HStack(spacing: 8) {
           Spacer()
           
-          Text(lastUpdateText)
-            .font(.caption)
-            .foregroundStyle(.secondary)
+          HStack(spacing: 4) {
+            Text(lastUpdateText)
+              .font(.caption)
+              .foregroundStyle(.secondary)
+            
+            if isBackgroundRefreshing {
+              Text("(updating...)")
+                .font(.caption)
+                .foregroundStyle(.secondary)
+                .transition(.opacity)
+            }
+          }
+          .animation(.easeInOut(duration: 0.2), value: isBackgroundRefreshing)
           
           if events.isEmpty {
             Button {
@@ -225,35 +229,55 @@ struct ContentView: View {
   }
   
   private func loadEvents() {
-    do {
-      // Load existing events immediately from database (synchronous)
-      let descriptor = FetchDescriptor<QuiEvent>()
-      let fetchedEvents = try modelContext.fetch(descriptor).sorted { $0.date < $1.date }
-      
-      // Deduplicate events based on their unique ID
-      events = Array(Set(fetchedEvents.map { $0.id })).compactMap { id in
-        fetchedEvents.first { $0.id == id }
-      }.sorted { $0.date < $1.date }
-      
-      // If no events and this is the first launch, show loading state
-      if events.isEmpty && lastUpdateDate == Date.distantPast {
-        isInitialFetching = true
-        // Start monitoring for updates
-        startMonitoringForUpdates()
-      }
-      
-      // Check if we need to refresh events in the background
-      let oneHourAgo = Calendar.current.date(byAdding: .hour, value: -1, to: Date()) ?? Date()
-      if lastUpdateDate < oneHourAgo {
-        // Fetch updates in the background without blocking the UI
-        isBackgroundRefreshing = true
-        Task {
-          await refreshEvents()
-          isBackgroundRefreshing = false
+    Task {
+      do {
+        let handler = QuiEventHandler(modelContainer: modelContext.container)
+        let eventIds = try await handler.fetchEventsFromDatabaseWithIds()
+        
+        // Fetch all events with these IDs in a single query
+        let descriptor = FetchDescriptor<QuiEvent>(predicate: #Predicate<QuiEvent> { event in
+          eventIds.contains(event.id)
+        })
+        let fetchedEvents = try modelContext.fetch(descriptor)
+        
+        // Sort them in the same order as the IDs
+        let newEvents = eventIds.compactMap { id in
+          fetchedEvents.first { $0.id == id }
         }
+        
+        await MainActor.run {
+          events = newEvents
+        }
+        
+        // If no events and this is the first launch, show loading state
+        if events.isEmpty && lastUpdateDate == Date.distantPast {
+          isInitialFetching = true
+          // Start monitoring for updates
+          startMonitoringForUpdates()
+        }
+        
+        // Check if we need to refresh events in the background
+        let oneHourAgo = Calendar.current.date(byAdding: .hour, value: -1, to: Date()) ?? Date()
+        let fiveMinutesAgo = Calendar.current.date(byAdding: .minute, value: -5, to: Date()) ?? Date()
+        
+        if lastUpdateDate < oneHourAgo && 
+           !isBackgroundRefreshing && 
+           lastBackgroundRefreshAttempt < fiveMinutesAgo {
+          // Fetch updates in the background without blocking the UI
+          Task {
+            await MainActor.run {
+              isBackgroundRefreshing = true
+              lastBackgroundRefreshAttempt = Date()
+            }
+            await refreshEvents()
+            await MainActor.run {
+              isBackgroundRefreshing = false
+            }
+          }
+        }
+      } catch {
+        print("Error loading events: \(error)")
       }
-    } catch {
-      print("Error loading events: \(error)")
     }
   }
   
@@ -263,14 +287,19 @@ struct ContentView: View {
     do {
       let handler = QuiEventHandler(modelContainer: modelContext.container)
       try await handler.updateFromWeb(imageCache: imageCache)
-      // Reload events after updating
-      let descriptor = FetchDescriptor<QuiEvent>()
-      let fetchedEvents = try modelContext.fetch(descriptor).sorted { $0.date < $1.date }
       
-      // Deduplicate events based on their unique ID
-      events = Array(Set(fetchedEvents.map { $0.id })).compactMap { id in
-        fetchedEvents.first { $0.id == id }
-      }.sorted { $0.date < $1.date }
+      // Update lastUpdateDate
+      await MainActor.run {
+        lastUpdateDate = Date()
+      }
+      
+      // Reload events after updating, but only if not in background refresh
+      if !isBackgroundRefreshing {
+        await loadEvents()
+      } else {
+        // For background refresh, just reload the events without triggering another background refresh
+        await reloadEventsOnly()
+      }
     } catch {
       // Handle error if needed
       print("Error refreshing events: \(error)")
@@ -295,6 +324,30 @@ struct ContentView: View {
     return EventType.allCases[randomIndex]
   }
   
+  private func reloadEventsOnly() async {
+    do {
+      let handler = QuiEventHandler(modelContainer: modelContext.container)
+      let eventIds = try await handler.fetchEventsFromDatabaseWithIds()
+      
+      // Fetch all events with these IDs in a single query
+      let descriptor = FetchDescriptor<QuiEvent>(predicate: #Predicate<QuiEvent> { event in
+        eventIds.contains(event.id)
+      })
+      let fetchedEvents = try modelContext.fetch(descriptor)
+      
+      // Sort them in the same order as the IDs
+      let newEvents = eventIds.compactMap { id in
+        fetchedEvents.first { $0.id == id }
+      }
+      
+      await MainActor.run {
+        events = newEvents
+      }
+    } catch {
+      print("Error reloading events: \(error)")
+    }
+  }
+  
   private func startMonitoringForUpdates() {
     // Check for updates every 2 seconds until we have events or timeout
     Task {
@@ -303,19 +356,9 @@ struct ContentView: View {
       
       while events.isEmpty && attempts < maxAttempts && isInitialFetching {
         try? await Task.sleep(nanoseconds: 2_000_000_000) // 2 seconds
-        await MainActor.run {
-          do {
-            let descriptor = FetchDescriptor<QuiEvent>()
-            let fetchedEvents = try modelContext.fetch(descriptor).sorted { $0.date < $1.date }
-            
-            // Deduplicate events based on their unique ID
-            events = Array(Set(fetchedEvents.map { $0.id })).compactMap { id in
-              fetchedEvents.first { $0.id == id }
-            }.sorted { $0.date < $1.date }
-          } catch {
-            print("Error monitoring for updates: \(error)")
-          }
-        }
+        
+        await reloadEventsOnly()
+        
         attempts += 1
       }
       

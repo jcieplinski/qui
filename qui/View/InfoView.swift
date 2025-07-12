@@ -9,11 +9,15 @@ import SwiftUI
 #if os(iOS)
 import MessageUI
 #endif
+import SwiftData
+import OSLog
 
 struct InfoView: View {
   @Environment(\.dismiss) private var dismiss
+  @Environment(\.modelContext) private var modelContext
   
   @State private var showingMailComposer: Bool = false
+  @State private var isDebugging: Bool = false
   
 #if os(iOS)
   @State var result: Result<MFMailComposeResult, Error>? = nil
@@ -133,6 +137,28 @@ struct InfoView: View {
           Text("Other Apps by Joe")
         }
 #endif
+
+#if DEBUG
+        Section {
+          Button("Debug Database") {
+            Task {
+              await debugDatabase()
+            }
+          }
+          .disabled(isDebugging)
+          .listRowBackground(Rectangle().foregroundStyle(.ultraThinMaterial))
+          
+          Button("Force Cleanup") {
+            Task {
+              await forceCleanup()
+            }
+          }
+          .disabled(isDebugging)
+          .listRowBackground(Rectangle().foregroundStyle(.ultraThinMaterial))
+        } header: {
+          Text("Debug")
+        }
+#endif
       }
 #if os(iOS)
       .scrollBounceBehavior(.basedOnSize)
@@ -162,6 +188,32 @@ struct InfoView: View {
       }
     }
   }
+  
+#if DEBUG
+  private func debugDatabase() async {
+    isDebugging = true
+    defer { isDebugging = false }
+    
+    do {
+      let handler = QuiEventHandler(modelContainer: modelContext.container)
+      try await handler.debugDatabase()
+    } catch {
+      Logger.swiftData.error("Debug error: \(error)")
+    }
+  }
+  
+  private func forceCleanup() async {
+    isDebugging = true
+    defer { isDebugging = false }
+    
+    do {
+      let handler = QuiEventHandler(modelContainer: modelContext.container)
+      try await handler.forceCleanup()
+    } catch {
+      Logger.swiftData.error("Cleanup error: \(error)")
+    }
+  }
+#endif
 }
 
 #Preview {
