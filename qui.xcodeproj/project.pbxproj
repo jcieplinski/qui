@@ -105,6 +105,7 @@
 				Model/QuiEventEntity.swift,
 				Model/QuiEventQuery.swift,
 				NoEventTitle.swift,
+				quiIconWatch.icon,
 				View/DateChooser.swift,
 				View/EventCard.swift,
 				View/EventsList.swift,
@@ -179,6 +180,13 @@
 			);
 			target = AED6B43C2DCD00B100FB6EB2 /* qui widget extension */;
 		};
+		AEEB3BF12E232D4E0081C6DB /* Exceptions for "qui" folder in "qui" target */ = {
+			isa = PBXFileSystemSynchronizedBuildFileExceptionSet;
+			membershipExceptions = (
+				quiIconWatch.icon,
+			);
+			target = AE3103AE2DCBCC9200A36CDE /* qui */;
+		};
 /* End PBXFileSystemSynchronizedBuildFileExceptionSet section */
 
 /* Begin PBXFileSystemSynchronizedRootGroup section */
@@ -201,6 +209,7 @@
 		AE3103B12DCBCC9200A36CDE /* qui */ = {
 			isa = PBXFileSystemSynchronizedRootGroup;
 			exceptions = (
+				AEEB3BF12E232D4E0081C6DB /* Exceptions for "qui" folder in "qui" target */,
 				AED6B45A2DCD00C900FB6EB2 /* Exceptions for "qui" folder in "qui widget extension" target */,
 				AE046B422DCE8F87000DAD3A /* Exceptions for "qui" folder in "qui watch Watch App" target */,
 				AE0A45122DCFFC810093EE8B /* Exceptions for "qui" folder in "qui watch complications extensionExtension" target */,
@@ -516,7 +525,7 @@
 		AE046B382DCE8C8B000DAD3A /* Debug */ = {
 			isa = XCBuildConfiguration;
 			buildSettings = {
-				ASSETCATALOG_COMPILER_APPICON_NAME = AppIcon;
+				ASSETCATALOG_COMPILER_APPICON_NAME = quiIconWatch;
 				ASSETCATALOG_COMPILER_GLOBAL_ACCENT_COLOR_NAME = AccentColor;
 				CODE_SIGN_ENTITLEMENTS = "qui watch Watch App/qui watch Watch App.entitlements";
 				CODE_SIGN_STYLE = Automatic;
@@ -547,7 +556,7 @@
 		AE046B392DCE8C8B000DAD3A /* Release */ = {
 			isa = XCBuildConfiguration;
 			buildSettings = {
-				ASSETCATALOG_COMPILER_APPICON_NAME = AppIcon;
+				ASSETCATALOG_COMPILER_APPICON_NAME = quiIconWatch;
 				ASSETCATALOG_COMPILER_GLOBAL_ACCENT_COLOR_NAME = AccentColor;
 				CODE_SIGN_ENTITLEMENTS = "qui watch Watch App/qui watch Watch App.entitlements";
 				CODE_SIGN_STYLE = Automatic;
@@ -763,7 +772,7 @@
 		AE3103BD2DCBCC9300A36CDE /* Debug */ = {
 			isa = XCBuildConfiguration;
 			buildSettings = {
-				ASSETCATALOG_COMPILER_APPICON_NAME = AppIcon;
+				ASSETCATALOG_COMPILER_APPICON_NAME = quiIcon;
 				ASSETCATALOG_COMPILER_GLOBAL_ACCENT_COLOR_NAME = AccentColor;
 				CODE_SIGN_ENTITLEMENTS = qui/qui.entitlements;
 				CODE_SIGN_STYLE = Automatic;
@@ -794,7 +803,7 @@
 		AE3103BE2DCBCC9300A36CDE /* Release */ = {
 			isa = XCBuildConfiguration;
 			buildSettings = {
-				ASSETCATALOG_COMPILER_APPICON_NAME = AppIcon;
+				ASSETCATALOG_COMPILER_APPICON_NAME = quiIcon;
 				ASSETCATALOG_COMPILER_GLOBAL_ACCENT_COLOR_NAME = AccentColor;
 				CODE_SIGN_ENTITLEMENTS = qui/qui.entitlements;
 				CODE_SIGN_STYLE = Automatic;
