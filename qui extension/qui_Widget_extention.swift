@@ -69,8 +69,9 @@ struct Provider: AppIntentTimelineProvider {
       
       Logger.swiftData.info("Widget: Fetched \(events.count) events from QuiEventHandler")
       
-      let calendar = Calendar.current
-      let today = calendar.startOfDay(for: Date())
+      var calendar = Calendar.current
+      calendar.timeZone = TimeZone(identifier: "America/Los_Angeles")!
+      let today = calendar.startOfDay(for: Date().convertedToPacificTime())
       let todayEvents = events.filter({ calendar.startOfDay(for: $0.date) == today })
       Logger.swiftData.info("Widget: Found \(todayEvents.count) events for today")
       

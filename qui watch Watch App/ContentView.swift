@@ -15,7 +15,7 @@ struct ContentView: View {
   @Environment(\.imageCache) private var imageCache
   @State private var events: [QuiEvent] = []
   
-  @State private var selectedDate: Date = Calendar.current.startOfDay(for: Date())
+  @State private var selectedDate: Date = Date().startOfDayInPacificTime()
   @State private var currentEvent: QuiEvent?
   @State private var showDatePicker: Bool = false
   @State private var showEventList: Bool = false
@@ -36,8 +36,12 @@ struct ContentView: View {
   }
   
   var eventsForSelectedDate: [QuiEvent] {
+    // Use Pacific timezone for date comparison
+    var calendar = Calendar.current
+    calendar.timeZone = TimeZone(identifier: "America/Los_Angeles")!
+    
     return events.filter {
-      Calendar.current.startOfDay(for: $0.date) == Calendar.current.startOfDay(for: selectedDate)
+      calendar.startOfDay(for: $0.date) == calendar.startOfDay(for: selectedDate)
     }.sorted { $0.date < $1.date }
   }
   

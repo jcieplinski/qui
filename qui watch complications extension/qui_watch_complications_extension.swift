@@ -60,7 +60,7 @@ struct qui_watch_complications_extensionEntryView : View {
   
   var nextEvent: QuiEvent? {
     return events
-      .filter { $0.date > Calendar.current.startOfDay(for: Date()) }
+      .filter { $0.date > Date().startOfDayInPacificTime() }
       .sorted { $0.date < $1.date }
       .first
   }

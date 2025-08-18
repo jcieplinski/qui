@@ -39,7 +39,8 @@ struct EventsForDateIntent: AppIntent {
   func perform() async throws -> some IntentResult & ReturnsValue<String> & ProvidesDialog {
     let handler = QuiEventHandler(modelContainer: sharedModelContainer)
     let events = try await handler.fetch()
-    let calendar = Calendar.current
+    var calendar = Calendar.current
+    calendar.timeZone = TimeZone(identifier: "America/Los_Angeles")!
     
     guard let day else { return .result(value: "No Date Specified", dialog: "I need to know which day you mean") }
     

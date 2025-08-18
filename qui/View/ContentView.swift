@@ -15,7 +15,7 @@ struct ContentView: View {
   @Environment(\.imageCache) private var imageCache
   @State private var events: [QuiEvent] = []
   
-  @State private var selectedDate: Date = Calendar.current.startOfDay(for: Date())
+  @State private var selectedDate: Date = Date().startOfDayInPacificTime()
   @State private var currentEvent: QuiEvent?
   @State private var showDatePicker: Bool = false
   @State private var showEventList: Bool = false
@@ -37,8 +37,12 @@ struct ContentView: View {
   }
   
   var eventsForSelectedDate: [QuiEvent] {
+    // Use Pacific timezone for date comparison
+    var calendar = Calendar.current
+    calendar.timeZone = TimeZone(identifier: "America/Los_Angeles")!
+    
     return events.filter {
-      Calendar.current.startOfDay(for: $0.date) == Calendar.current.startOfDay(for: selectedDate)
+      calendar.startOfDay(for: $0.date) == calendar.startOfDay(for: selectedDate)
     }.sorted { $0.date < $1.date }
   }
   
@@ -257,8 +261,10 @@ struct ContentView: View {
         }
         
         // Check if we need to refresh events in the background
-        let oneHourAgo = Calendar.current.date(byAdding: .hour, value: -1, to: Date()) ?? Date()
-        let fiveMinutesAgo = Calendar.current.date(byAdding: .minute, value: -5, to: Date()) ?? Date()
+        var calendar = Calendar.current
+        calendar.timeZone = TimeZone(identifier: "America/Los_Angeles")!
+        let oneHourAgo = calendar.date(byAdding: .hour, value: -1, to: Date().convertedToPacificTime()) ?? Date()
+        let fiveMinutesAgo = calendar.date(byAdding: .minute, value: -5, to: Date().convertedToPacificTime()) ?? Date()
         
         if lastUpdateDate < oneHourAgo && 
            !isBackgroundRefreshing && 
@@ -295,7 +301,7 @@ struct ContentView: View {
       
       // Reload events after updating, but only if not in background refresh
       if !isBackgroundRefreshing {
-        await loadEvents()
+        loadEvents()
       } else {
         // For background refresh, just reload the events without triggering another background refresh
         await reloadEventsOnly()

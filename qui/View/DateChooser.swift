@@ -17,7 +17,7 @@ struct DateChooser: View {
       DatePicker(
         "Select Date",
         selection: $selectedDate,
-        in: Calendar.current.startOfDay(for: Date())...,
+        in: Date().startOfDayInPacificTime()...,
         displayedComponents: [.date]
       )
       .padding()
