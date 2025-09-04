@@ -11,6 +11,7 @@ enum EventLocation: String, Codable {
   case oraclePark
   case chaseCenter
   case ferryBuilding
+  case chinaBasin
   case pier48
   case other
   
@@ -22,6 +23,8 @@ enum EventLocation: String, Codable {
       self = .chaseCenter
     case "Ferry Building":
       self = .ferryBuilding
+    case "China Basin Park":
+      self = .chinaBasin
     case "Pier 48":
       self = .pier48
     default:
@@ -37,6 +40,8 @@ enum EventLocation: String, Codable {
       return "Chase Center"
     case .ferryBuilding:
       return "Ferry Building"
+    case .chinaBasin:
+      return "China Basin Park"
     case .pier48:
       return "Pier 48"
     case .other:
@@ -52,6 +57,8 @@ enum EventLocation: String, Codable {
       return .chaseBlue
     case .ferryBuilding:
       return .ferryGrey
+    case .chinaBasin:
+      return .chinaBasinGreen
     case .pier48:
       return .pier48Blue
     case .other:
@@ -63,7 +70,7 @@ enum EventLocation: String, Codable {
     switch self {
     case .oraclePark, .ferryBuilding:
       return .black
-    case .chaseCenter, .pier48:
+    case .chaseCenter, .pier48, .chinaBasin:
       return .white
     case .other:
       return .white
