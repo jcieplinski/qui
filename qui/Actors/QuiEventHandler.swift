@@ -8,6 +8,7 @@
 import SwiftUI
 import SwiftData
 import OSLog
+import WidgetKit
 
 @ModelActor
 actor QuiEventHandler {
@@ -180,7 +181,12 @@ actor QuiEventHandler {
       Logger.urlSession.info("Fetched \(newEvents.count) events")
       Logger.urlSession.info("Fetched \(newSpecialEvents.count) special events")
       
-      guard !newEvents.isEmpty else { return }
+      // Safety check: If regular events are empty, don't make any changes to prevent data loss
+      // Special events are additive only and should not replace the main events feed
+      if newEvents.isEmpty {
+        Logger.urlSession.warning("Regular events are empty - skipping update to prevent data loss")
+        return
+      }
       
       // Get existing events from database
       let descriptor = FetchDescriptor<QuiEvent>()
@@ -205,7 +211,22 @@ actor QuiEventHandler {
       // Clean up image cache
       await imageCache.cleanup(keeping: imageURLsToKeep)
       
-      // Delete only past events (not today's or future events) using Pacific timezone
+      // Combine all new events and remove duplicates based on ID
+      let allNewEvents = newEvents + newSpecialEvents
+      
+      // Create a set of IDs from the new events for efficient lookup
+      let newEventIds = Set(allNewEvents.map { $0.id })
+      
+      // Delete events that are no longer in the new events.json file
+      // This handles cases where TBD events are removed from the feed
+      for event in existingEvents {
+        if !newEventIds.contains(event.id) {
+          Logger.swiftData.info("Removing event no longer in feed: \(event.title) (\(event.id))")
+          modelContext.delete(event)
+        }
+      }
+      
+      // Also delete past events (not today's or future events) using Pacific timezone
       var cleanupCalendar = Calendar.current
       cleanupCalendar.timeZone = TimeZone(identifier: "America/Los_Angeles")!
       let cleanupToday = cleanupCalendar.startOfDay(for: Date().convertedToPacificTime())
@@ -216,8 +237,7 @@ actor QuiEventHandler {
         }
       }
       
-      // Combine all new events and remove duplicates based on ID
-      let allNewEvents = newEvents + newSpecialEvents
+      // Remove duplicates from new events based on ID
       var seenIds = Set<UUID>()
       let uniqueNewEvents = allNewEvents.compactMap { event -> QuiEvent? in
         if seenIds.contains(event.id) {
@@ -237,6 +257,9 @@ actor QuiEventHandler {
       
       // Update lastUpdateDate
       lastUpdateDate = Date()
+      
+      // Reload all widget timelines to reflect the updated events
+      WidgetCenter.shared.reloadAllTimelines()
       
       Logger.swiftData.info("Successfully updated database with \(uniqueNewEvents.count) new events")
       
