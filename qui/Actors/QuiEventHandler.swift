@@ -181,13 +181,6 @@ actor QuiEventHandler {
       Logger.urlSession.info("Fetched \(newEvents.count) events")
       Logger.urlSession.info("Fetched \(newSpecialEvents.count) special events")
       
-      // Safety check: If regular events are empty, don't make any changes to prevent data loss
-      // Special events are additive only and should not replace the main events feed
-      if newEvents.isEmpty {
-        Logger.urlSession.warning("Regular events are empty - skipping update to prevent data loss")
-        return
-      }
-      
       // Get existing events from database
       let descriptor = FetchDescriptor<QuiEvent>()
       let existingEvents = try modelContext.fetch(descriptor)
@@ -217,24 +210,43 @@ actor QuiEventHandler {
       // Create a set of IDs from the new events for efficient lookup
       let newEventIds = Set(allNewEvents.map { $0.id })
       
-      // Delete events that are no longer in the new events.json file
-      // This handles cases where TBD events are removed from the feed
-      for event in existingEvents {
-        if !newEventIds.contains(event.id) {
-          Logger.swiftData.info("Removing event no longer in feed: \(event.title) (\(event.id))")
-          modelContext.delete(event)
-        }
-      }
-      
-      // Also delete past events (not today's or future events) using Pacific timezone
+      // Delete past events and events removed from feeds
+      // This prevents data loss if the main events API is temporarily down
+      // Special events are always processed regardless of main events status
       var cleanupCalendar = Calendar.current
       cleanupCalendar.timeZone = TimeZone(identifier: "America/Los_Angeles")!
       let cleanupToday = cleanupCalendar.startOfDay(for: Date().convertedToPacificTime())
       
+      // Track which events are being kept (not deleted)
+      var eventsToKeep = Set<UUID>()
+      
       for event in existingEvents {
-        if cleanupCalendar.startOfDay(for: event.date) < cleanupToday {
-          modelContext.delete(event)
+        let isPast = cleanupCalendar.startOfDay(for: event.date) < cleanupToday
+        
+        // Determine if event should be removed from feed
+        var isRemovedFromFeed = false
+        if !newEvents.isEmpty {
+          // If main events are available, remove events not in the combined feed
+          isRemovedFromFeed = !newEventIds.contains(event.id)
+        } else {
+          // If main events are empty, preserve existing events to prevent data loss
+          // Special events will still be added/updated, but we won't delete existing events
+          // This ensures data isn't lost when the main feed is temporarily down
+          isRemovedFromFeed = false
         }
+        
+        if isPast || isRemovedFromFeed {
+          if isRemovedFromFeed {
+            Logger.swiftData.info("Removing event no longer in feed: \(event.title) (\(event.id))")
+          }
+          modelContext.delete(event)
+        } else {
+          eventsToKeep.insert(event.id)
+        }
+      }
+      
+      if newEvents.isEmpty {
+        Logger.urlSession.warning("Regular events are empty - preserving existing events, but still updating special events")
       }
       
       // Remove duplicates from new events based on ID
@@ -247,9 +259,28 @@ actor QuiEventHandler {
         return event
       }
       
-      // Add new events to database
-      for event in uniqueNewEvents {
-        modelContext.insert(event)
+      // Create a dictionary of existing events by ID for efficient lookup
+      // Only include events that are being kept (not deleted)
+      let existingEventsById = Dictionary(existingEvents.filter { eventsToKeep.contains($0.id) }.map { ($0.id, $0) }, 
+                                         uniquingKeysWith: { first, _ in first })
+      
+      // Update existing events or insert new ones
+      for newEvent in uniqueNewEvents {
+        if let existingEvent = existingEventsById[newEvent.id] {
+          // Update existing event with new data
+          existingEvent.title = newEvent.title
+          existingEvent.type = newEvent.type
+          existingEvent.location = newEvent.location
+          existingEvent.date = newEvent.date
+          existingEvent.timeTBD = newEvent.timeTBD
+          existingEvent.performers = newEvent.performers
+          existingEvent.url = newEvent.url
+          existingEvent.imageURL = newEvent.imageURL
+          existingEvent.source = newEvent.source
+        } else {
+          // Insert new event
+          modelContext.insert(newEvent)
+        }
       }
       
       // Save changes
