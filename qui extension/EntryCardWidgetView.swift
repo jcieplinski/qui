@@ -29,10 +29,10 @@ struct EntryCardWidgetView: View {
       
       if let subtitle = event.subtitle {
         HStack {
-          Text(event.title)
+          Text(subtitle)
             .font(.body)
             .fontDesign(.rounded)
-            .foregroundStyle(event.eventLocation.textColor.opacity(0.5))
+            .foregroundStyle(event.eventLocation.textColor.opacity(0.6))
             .multilineTextAlignment(.leading)
             .minimumScaleFactor(0.4)
             .lineLimit(2)
