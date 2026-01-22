@@ -25,6 +25,21 @@ struct EventCardWatch: View {
         
         Spacer()
       }
+      
+      if let subtitle = event.subtitle {
+        HStack {
+          Text(subtitle)
+            .font(.body)
+            .fontDesign(.rounded)
+            .multilineTextAlignment(.leading)
+            .allowsTightening(true)
+            .minimumScaleFactor(0.3)
+            .lineLimit(3)
+            .lineSpacing(0.5)
+          
+          Spacer()
+        }
+      }
 
       Spacer(minLength: 1)
       

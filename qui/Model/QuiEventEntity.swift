@@ -19,6 +19,7 @@ struct QuiEventEntity: Identifiable, AppEntity {
   
   let id: UUID
   let title: String
+  let subtitle: String?
   let type: String
   let location: String
   let date: Date
@@ -30,6 +31,7 @@ struct QuiEventEntity: Identifiable, AppEntity {
   internal init(
     id: UUID,
     title: String,
+    subtitle: String?,
     type: String,
     location: String,
     date: Date,
@@ -40,6 +42,7 @@ struct QuiEventEntity: Identifiable, AppEntity {
   ) {
     self.id = id
     self.title = title
+    self.subtitle = subtitle
     self.type = type
     self.location = location
     self.date = date
@@ -52,6 +55,7 @@ struct QuiEventEntity: Identifiable, AppEntity {
   init(event: QuiEvent) {
     self.id = event.id
     self.title = event.title
+    self.subtitle = event.subtitle
     self.type = event.type
     self.location = event.location
     self.date = event.date

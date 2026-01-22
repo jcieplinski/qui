@@ -269,6 +269,7 @@ actor QuiEventHandler {
         if let existingEvent = existingEventsById[newEvent.id] {
           // Update existing event with new data
           existingEvent.title = newEvent.title
+          existingEvent.subtitle = newEvent.subtitle
           existingEvent.type = newEvent.type
           existingEvent.location = newEvent.location
           existingEvent.date = newEvent.date

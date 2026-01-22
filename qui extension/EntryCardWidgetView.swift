@@ -27,6 +27,21 @@ struct EntryCardWidgetView: View {
         Spacer()
       }
       
+      if let subtitle = event.subtitle {
+        HStack {
+          Text(event.title)
+            .font(.body)
+            .fontDesign(.rounded)
+            .foregroundStyle(event.eventLocation.textColor.opacity(0.5))
+            .multilineTextAlignment(.leading)
+            .minimumScaleFactor(0.4)
+            .lineLimit(2)
+            .truncationMode(.tail)
+          
+          Spacer()
+        }
+      }
+      
       Spacer(minLength: 1)
       
       if let image {

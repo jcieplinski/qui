@@ -13,6 +13,7 @@ final class QuiEvent: Codable, Equatable {
   internal init(
     id: UUID,
     title: String,
+    subtitle: String?,
     type: String,
     location: String,
     date: Date,
@@ -24,6 +25,7 @@ final class QuiEvent: Codable, Equatable {
   ) {
     self.id = id
     self.title = title
+    self.subtitle = subtitle
     self.type = type
     self.location = location
     self.date = date
@@ -36,6 +38,7 @@ final class QuiEvent: Codable, Equatable {
   
   var id: UUID
   var title: String
+  var subtitle: String?
   var type: String
   var location: String
   var date: Date
@@ -62,6 +65,7 @@ final class QuiEvent: Codable, Equatable {
   enum CodingKeys: String, CodingKey {
     case id
     case title
+    case subtitle
     case type
     case location
     case date
@@ -77,6 +81,7 @@ final class QuiEvent: Codable, Equatable {
     let idString = try container.decode(String.self, forKey: .id)
     id = UUID(uuidString: idString) ?? UUID()
     title = try container.decode(String.self, forKey: .title)
+    subtitle = try container.decodeIfPresent(String.self, forKey: .subtitle)
     type = try container.decode(String.self, forKey: .type)
     location = try container.decode(String.self, forKey: .location)
     performers = try container.decodeIfPresent(String.self, forKey: .performers)
@@ -96,6 +101,7 @@ final class QuiEvent: Codable, Equatable {
     var container = encoder.container(keyedBy: CodingKeys.self)
     try container.encode(id.uuidString, forKey: .id)
     try container.encode(title, forKey: .title)
+    try container.encode(subtitle, forKey: .subtitle)
     try container.encode(type, forKey: .type)
     try container.encode(location, forKey: .location)
     try container.encodeIfPresent(performers, forKey: .performers)
@@ -117,6 +123,7 @@ final class QuiEvent: Codable, Equatable {
     return QuiEvent(
       id: UUID(),
       title: "SF Giants vs. Colorado Rockies",
+      subtitle: "This would be where a subtitle goes",
       type: EventType.sports.rawValue,
       location: EventLocation.oraclePark.title,
       date: Calendar.current.date(bySettingHour: 19, minute: 30, second: 0, of: Date()) ?? Date(),
@@ -132,6 +139,7 @@ final class QuiEvent: Codable, Equatable {
     return QuiEvent(
       id: UUID(),
       title: "SF Giants vs. Colorado Rockies",
+      subtitle: "This would be where a subtitle goes",
       type: EventType.sports.rawValue,
       location: EventLocation.oraclePark.title,
       date: Calendar.current.date(bySettingHour: 19, minute: 30, second: 0, of: Date(timeIntervalSinceNow: 432000)) ?? Date(timeIntervalSinceNow: 432000),

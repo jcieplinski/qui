@@ -8,31 +8,90 @@
 import SwiftUI
 
 struct EventCard: View {
+  @Environment(\.verticalSizeClass) private var verticalSizeClass
+
   let event: QuiEvent
   
   var body: some View {
     VStack {
-      HStack {
-        Text(event.title)
-          .font(.largeTitle)
-          .fontWeight(.bold)
-          .fontDesign(.rounded)
-          .foregroundStyle(event.eventLocation.textColor)
-          .multilineTextAlignment(.leading)
-        
-        Spacer()
-      }
-      
-      Spacer()
-      
-      CachedAsyncImage(url: URL(string: event.imageURL ?? "")) { image in
-        image
-          .resizable()
-          .aspectRatio(contentMode: .fit)
-          .frame(maxWidth: 220, maxHeight: 220)
-          .shadow(radius: 0.4)
-      } placeholder: {
-        ProgressView()
+      if verticalSizeClass == .regular {
+        VStack {
+          VStack(spacing: 6) {
+            HStack {
+              Text(event.title)
+                .font(.largeTitle)
+                .fontWeight(.bold)
+                .fontDesign(.rounded)
+                .foregroundStyle(event.eventLocation.textColor)
+                .multilineTextAlignment(.leading)
+              
+              Spacer()
+            }
+            
+            if let subtitle = event.subtitle {
+              HStack {
+                Text(subtitle)
+                  .font(.body)
+                  .fontWeight(.regular)
+                  .fontDesign(.rounded)
+                  .foregroundStyle(event.eventLocation.textColor.opacity(0.6))
+                  .multilineTextAlignment(.leading)
+                
+                Spacer()
+              }
+            }
+          }
+          
+          CachedAsyncImage(url: URL(string: event.imageURL ?? "")) { image in
+            image
+              .resizable()
+              .aspectRatio(contentMode: .fit)
+              .frame(maxWidth: 220, maxHeight: 220)
+              .shadow(radius: 0.4)
+          } placeholder: {
+            ProgressView()
+          }
+        }
+      } else {
+        HStack {
+          VStack(spacing: 6) {
+            HStack {
+              Text(event.title)
+                .font(.largeTitle)
+                .fontWeight(.bold)
+                .fontDesign(.rounded)
+                .foregroundStyle(event.eventLocation.textColor)
+                .multilineTextAlignment(.leading)
+              
+              Spacer()
+            }
+            
+            if let subtitle = event.subtitle {
+              HStack {
+                Text(subtitle)
+                  .font(.body)
+                  .fontWeight(.regular)
+                  .fontDesign(.rounded)
+                  .foregroundStyle(event.eventLocation.textColor.opacity(0.6))
+                  .multilineTextAlignment(.leading)
+                
+                Spacer()
+              }
+            }
+          }
+          
+          Spacer()
+          
+          CachedAsyncImage(url: URL(string: event.imageURL ?? "")) { image in
+            image
+              .resizable()
+              .aspectRatio(contentMode: .fit)
+              .frame(maxWidth: 220, maxHeight: 220)
+              .shadow(radius: 0.4)
+          } placeholder: {
+            ProgressView()
+          }
+        }
       }
       
       Spacer()

@@ -130,10 +130,15 @@ struct EventsList: View {
             VStack(alignment: .leading) {
               Text(event.title)
                 .font(.headline)
+              if let subtitle = event.subtitle {
+                Text(subtitle)
+                  .font(.subheadline)
+              }
               Text(event.date.formatted(date: .abbreviated, time: .shortened))
                 .font(.subheadline)
               Text(event.location)
                 .font(.caption)
+                .padding(.top, 2)
             }
             
 #if os(iOS)
