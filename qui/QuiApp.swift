@@ -41,6 +41,28 @@ struct QuiApp: App {
               imageCache = cache
             }
           }
+          
+          do {
+            let cache = imageCache ?? defaultCache
+            let handler = QuiEventHandler(modelContainer: sharedModelContainer)
+            
+#if DEBUG
+            // Debug the database in debug mode
+            do {
+              try await handler.debugDatabase()
+              try await handler.forceCleanup()
+            } catch {
+              Logger.swiftData.error("Debug error: \(error)")
+            }
+#endif
+            
+            try await handler.updateFromWeb(imageCache: cache)
+            await MainActor.run {
+              lastFetch = Date()
+            }
+          } catch {
+            Logger.swiftData.error("Error fetching new stuff: \(error)")
+          }
         }
         .onAppear {
           // We only want to fetch new data once per day
@@ -50,30 +72,6 @@ struct QuiApp: App {
             return
           }
 #endif
-          
-          Task {
-            do {
-              let cache = imageCache ?? defaultCache
-              let handler = QuiEventHandler(modelContainer: sharedModelContainer)
-              
-#if DEBUG
-              // Debug the database in debug mode
-              do {
-                try await handler.debugDatabase()
-                try await handler.forceCleanup()
-              } catch {
-                Logger.swiftData.error("Debug error: \(error)")
-              }
-#endif
-              
-              try await handler.updateFromWeb(imageCache: cache)
-              await MainActor.run {
-                lastFetch = Date()
-              }
-            } catch {
-              Logger.swiftData.error("Error fetching new stuff: \(error)")
-            }
-          }
         }
     }
     .modelContainer(sharedModelContainer)

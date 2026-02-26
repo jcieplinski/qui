@@ -314,6 +314,10 @@ actor QuiEventHandler {
       do {
         return try decoder.decode([QuiEvent].self, from: data)
       } catch {
+        Logger.urlSession.error("Failed to decode events JSON: \(error.localizedDescription)")
+        if let jsonString = String(data: data, encoding: .utf8) {
+          Logger.urlSession.error("Response data: \(jsonString.prefix(500))")
+        }
         throw URLError(.cannotParseResponse)
       }
       
@@ -345,6 +349,10 @@ actor QuiEventHandler {
           calendar.startOfDay(for: event.date) >= today
         }
       } catch {
+        Logger.urlSession.error("Failed to decode special events JSON: \(error.localizedDescription)")
+        if let jsonString = String(data: data, encoding: .utf8) {
+          Logger.urlSession.error("Response data: \(jsonString.prefix(500))")
+        }
         throw URLError(.cannotParseResponse)
       }
       
