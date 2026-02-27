@@ -13,46 +13,40 @@ import WidgetKit
 @ModelActor
 actor QuiEventHandler {
   
-  @AppStorage("lastUpdateDate") private var lastUpdateDate: Date = Date.distantPast
+  // Reusable URLSession for API calls
+  private let urlSession = URLSession(configuration: .ephemeral)
+  
+  // Reusable Pacific timezone calendar
+  private var pacificCalendar: Calendar {
+    var calendar = Calendar.current
+    calendar.timeZone = TimeZone(identifier: "America/Los_Angeles")!
+    return calendar
+  }
+  
+  // Actor-safe storage for last update date
+  private var lastUpdateDate: Date {
+    get {
+      UserDefaults.appGroup.object(forKey: "lastUpdateDate") as? Date ?? Date.distantPast
+    }
+    set {
+      UserDefaults.appGroup.set(newValue, forKey: "lastUpdateDate")
+    }
+  }
   
   public func fetch() async throws -> [QuiEventEntity] {
     // Clean up duplicates before fetching
     try await cleanupDuplicates()
     
     let descriptor = FetchDescriptor<QuiEvent>()
-    let fetchedEvents = try modelContext.fetch(descriptor).sorted{ $0.date < $1.date }
+    let fetchedEvents = try modelContext.fetch(descriptor)
     
-    // Deduplicate events based on their unique ID
-    var seenIds = Set<UUID>()
-    let uniqueEvents = fetchedEvents.compactMap { event -> QuiEvent? in
-      if seenIds.contains(event.id) {
-        return nil // Skip duplicate
-      }
-      seenIds.insert(event.id)
-      return event
-    }.sorted { $0.date < $1.date }
+    let uniqueEvents = deduplicateById(fetchedEvents).sorted { $0.date < $1.date }
     
     return uniqueEvents.map(QuiEventEntity.init)
   }
   
   public func fetchEventsFromDatabase() async throws -> [QuiEventEntity] {
-    // Clean up duplicates before fetching
-    try await cleanupDuplicates()
-    
-    let descriptor = FetchDescriptor<QuiEvent>()
-    let fetchedEvents = try modelContext.fetch(descriptor).sorted{ $0.date < $1.date }
-    
-    // Deduplicate events based on their unique ID
-    var seenIds = Set<UUID>()
-    let uniqueEvents = fetchedEvents.compactMap { event -> QuiEvent? in
-      if seenIds.contains(event.id) {
-        return nil // Skip duplicate
-      }
-      seenIds.insert(event.id)
-      return event
-    }.sorted { $0.date < $1.date }
-    
-    return uniqueEvents.map(QuiEventEntity.init)
+    return try await fetch()
   }
   
   public func fetchEventsFromDatabaseWithIds() async throws -> [UUID] {
@@ -60,19 +54,23 @@ actor QuiEventHandler {
     try await cleanupDuplicates()
     
     let descriptor = FetchDescriptor<QuiEvent>()
-    let fetchedEvents = try modelContext.fetch(descriptor).sorted{ $0.date < $1.date }
+    let fetchedEvents = try modelContext.fetch(descriptor)
     
-    // Deduplicate events based on their unique ID
+    let uniqueEvents = deduplicateById(fetchedEvents).sorted { $0.date < $1.date }
+    
+    return uniqueEvents.map { $0.id }
+  }
+  
+  // Helper method to deduplicate events based on their unique ID
+  private func deduplicateById(_ events: [QuiEvent]) -> [QuiEvent] {
     var seenIds = Set<UUID>()
-    let uniqueEvents = fetchedEvents.compactMap { event -> QuiEvent? in
+    return events.compactMap { event -> QuiEvent? in
       if seenIds.contains(event.id) {
-        return nil // Skip duplicate
+        return nil
       }
       seenIds.insert(event.id)
       return event
-    }.sorted { $0.date < $1.date }
-    
-    return uniqueEvents.map { $0.id }
+    }
   }
   
   public func cleanupDuplicates() async throws {
@@ -81,10 +79,12 @@ actor QuiEventHandler {
     
     Logger.swiftData.info("Starting duplicate cleanup. Total events in database: \(allEvents.count)")
     
+    // Track events that have been deleted to avoid double deletion
+    var deletedEvents = Set<UUID>()
+    var totalDuplicatesRemoved = 0
+    
     // Group events by ID to find duplicates
     let groupedEvents = Dictionary(grouping: allEvents) { $0.id }
-    
-    var totalDuplicatesRemoved = 0
     
     // For each group of events with the same ID, keep only the first one
     for (id, events) in groupedEvents {
@@ -96,13 +96,16 @@ actor QuiEventHandler {
         let eventsToDelete = Array(events.dropFirst())
         for event in eventsToDelete {
           modelContext.delete(event)
+          deletedEvents.insert(event.id)
           totalDuplicatesRemoved += 1
         }
       }
     }
     
     // Also check for duplicates by title, date, and location (in case UUID parsing failed)
-    let titleDateGrouped = Dictionary(grouping: allEvents) { event in
+    // Only check events that haven't already been deleted
+    let remainingEvents = allEvents.filter { !deletedEvents.contains($0.id) }
+    let titleDateGrouped = Dictionary(grouping: remainingEvents) { event in
       "\(event.title)|\(event.date.timeIntervalSince1970)|\(event.location)"
     }
     
@@ -186,8 +189,6 @@ actor QuiEventHandler {
       let existingEvents = try modelContext.fetch(descriptor)
       
       // Keep track of today's events and future events using Pacific timezone
-      var pacificCalendar = Calendar.current
-      pacificCalendar.timeZone = TimeZone(identifier: "America/Los_Angeles")!
       let today = pacificCalendar.startOfDay(for: Date().convertedToPacificTime())
       let todaysEvents = existingEvents.filter { pacificCalendar.startOfDay(for: $0.date) == today }
       let futureEvents = existingEvents.filter { pacificCalendar.startOfDay(for: $0.date) > today }
@@ -213,15 +214,13 @@ actor QuiEventHandler {
       // Delete past events and events removed from feeds
       // This prevents data loss if the main events API is temporarily down
       // Special events are always processed regardless of main events status
-      var cleanupCalendar = Calendar.current
-      cleanupCalendar.timeZone = TimeZone(identifier: "America/Los_Angeles")!
-      let cleanupToday = cleanupCalendar.startOfDay(for: Date().convertedToPacificTime())
+      let cleanupToday = pacificCalendar.startOfDay(for: Date().convertedToPacificTime())
       
       // Track which events are being kept (not deleted)
       var eventsToKeep = Set<UUID>()
       
       for event in existingEvents {
-        let isPast = cleanupCalendar.startOfDay(for: event.date) < cleanupToday
+        let isPast = pacificCalendar.startOfDay(for: event.date) < cleanupToday
         
         // Determine if event should be removed from feed
         var isRemovedFromFeed = false
@@ -250,19 +249,15 @@ actor QuiEventHandler {
       }
       
       // Remove duplicates from new events based on ID
-      var seenIds = Set<UUID>()
-      let uniqueNewEvents = allNewEvents.compactMap { event -> QuiEvent? in
-        if seenIds.contains(event.id) {
-          return nil // Skip duplicate
-        }
-        seenIds.insert(event.id)
-        return event
-      }
+      let uniqueNewEvents = deduplicateById(allNewEvents)
       
       // Create a dictionary of existing events by ID for efficient lookup
       // Only include events that are being kept (not deleted)
-      let existingEventsById = Dictionary(existingEvents.filter { eventsToKeep.contains($0.id) }.map { ($0.id, $0) }, 
-                                         uniquingKeysWith: { first, _ in first })
+      let keptEvents = existingEvents.filter { eventsToKeep.contains($0.id) }
+      var existingEventsById = Dictionary<UUID, QuiEvent>(minimumCapacity: keptEvents.count)
+      for event in keptEvents {
+        existingEventsById[event.id] = event
+      }
       
       // Update existing events or insert new ones
       for newEvent in uniqueNewEvents {
@@ -307,7 +302,7 @@ actor QuiEventHandler {
     }
     
     do {
-      let (data, _) = try await URLSession(configuration: .ephemeral).data(from: url)
+      let (data, _) = try await urlSession.data(from: url)
       
       let decoder = JSONDecoder()
       
@@ -328,13 +323,13 @@ actor QuiEventHandler {
     }
   }
   
-  func fetchSpecialEvents() async throws -> [QuiEvent] {
+  private func fetchSpecialEvents() async throws -> [QuiEvent] {
     guard let url = URL(string: Constants.specialEventsAPIEndpoint) else {
       throw URLError(.badURL)
     }
     
     do {
-      let (data, _) = try await URLSession(configuration: .ephemeral).data(from: url)
+      let (data, _) = try await urlSession.data(from: url)
       
       let decoder = JSONDecoder()
       
@@ -342,11 +337,9 @@ actor QuiEventHandler {
         let allSpecialEvents = try decoder.decode([QuiEvent].self, from: data)
         
         // Filter out past events using Pacific timezone
-        var calendar = Calendar.current
-        calendar.timeZone = TimeZone(identifier: "America/Los_Angeles")!
-        let today = calendar.startOfDay(for: Date().convertedToPacificTime())
+        let today = pacificCalendar.startOfDay(for: Date().convertedToPacificTime())
         return allSpecialEvents.filter { event in
-          calendar.startOfDay(for: event.date) >= today
+          pacificCalendar.startOfDay(for: event.date) >= today
         }
       } catch {
         Logger.urlSession.error("Failed to decode special events JSON: \(error.localizedDescription)")
