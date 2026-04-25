@@ -15,4 +15,6 @@ enum Constants {
 
 enum DefaultsKey {
   static let lastFetch = "lastFetch"
+  static let widgetEventIndex = "widgetEventIndex"
+  static let widgetEventDate = "widgetEventDate"
 }

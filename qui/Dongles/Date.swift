@@ -48,11 +48,11 @@ extension Date {
     
     if !timeString.contains(":") {
       timeTBD = true
-      dateFormatter.dateFormat = "YYYY-MM-dd"
+      dateFormatter.dateFormat = "yyyy-MM-dd"
       let pacificDate = dateFormatter.date(from: dateString) ?? Date()
       return (date: pacificDate, timeTBD: timeTBD)
     } else {
-      dateFormatter.dateFormat = "YYYY-MM-dd HH:mm"
+      dateFormatter.dateFormat = "yyyy-MM-dd HH:mm"
       let pacificDate = dateFormatter.date(from: "\(dateString) \(timeString)") ?? Date()
       return (date: pacificDate, timeTBD: timeTBD)
     }
@@ -60,8 +60,8 @@ extension Date {
   
   static func dateToStringDateStringTime(date: Date) -> (stringDate: String, stringTime: String) {
     let dateFormatter = DateFormatter()
-    dateFormatter.dateFormat = "YYYY-MM-dd HH:mm"
-    
+    dateFormatter.dateFormat = "yyyy-MM-dd HH:mm"
+
     // Force Pacific timezone for all date formatting
     dateFormatter.timeZone = pacificTimeZone
     

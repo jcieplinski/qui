@@ -8,9 +8,11 @@
 import SwiftUI
 import SwiftData
 import OSLog
+import WidgetKit
 
 @main
 struct QuiApp: App {
+  @Environment(\.scenePhase) private var scenePhase
   @AppStorage(DefaultsKey.lastFetch) private var lastFetch: Date?
   @State private var imageCache: ImageCache?
   @State private var defaultCache = ImageCache(diskCache: DiskImageCache())
@@ -20,8 +22,12 @@ struct QuiApp: App {
       QuiEvent.self,
     ])
     
-    let modelConfiguration = ModelConfiguration(schema: schema, isStoredInMemoryOnly: false)
-    
+    let modelConfiguration = ModelConfiguration(
+      schema: schema,
+      isStoredInMemoryOnly: false,
+      groupContainer: .identifier(Constants.appGroup)
+    )
+
     do {
       return try ModelContainer(for: schema, configurations: [modelConfiguration])
     } catch {
@@ -64,14 +70,22 @@ struct QuiApp: App {
             Logger.swiftData.error("Error fetching new stuff: \(error)")
           }
         }
-        .onAppear {
-          // We only want to fetch new data once per day
-#if DEBUG
-#else
-          if let lastFetch, lastFetch.isToday() {
-            return
+        .onChange(of: scenePhase) {
+          if scenePhase == .active {
+            Task {
+              do {
+                let cache = imageCache ?? defaultCache
+                let handler = QuiEventHandler(modelContainer: sharedModelContainer)
+                try await handler.updateFromWeb(imageCache: cache)
+                await MainActor.run {
+                  lastFetch = Date()
+                }
+              } catch {
+                Logger.swiftData.error("Error refreshing on foreground: \(error)")
+                WidgetCenter.shared.reloadAllTimelines()
+              }
+            }
           }
-#endif
         }
     }
     .modelContainer(sharedModelContainer)
