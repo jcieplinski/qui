@@ -36,7 +36,7 @@
 			containerPortal = AE3103A72DCBCC9200A36CDE /* Project object */;
 			proxyType = 1;
 			remoteGlobalIDString = AED6B43C2DCD00B100FB6EB2;
-			remoteInfo = "Mission Rock Events Widget ExtensionExtension";
+			remoteInfo = "qui widget extension";
 		};
 /* End PBXContainerItemProxy section */
 
@@ -369,7 +369,7 @@
 			name = qui;
 			packageProductDependencies = (
 			);
-			productName = "Mission Rock Events";
+			productName = qui;
 			productReference = AE3103AF2DCBCC9200A36CDE /* qui.app */;
 			productType = "com.apple.product-type.application";
 		};
@@ -391,7 +391,7 @@
 			name = "qui widget extension";
 			packageProductDependencies = (
 			);
-			productName = "Mission Rock Events Widget ExtensionExtension";
+			productName = "qui widget extension";
 			productReference = AED6B43D2DCD00B100FB6EB2 /* qui widget extension.appex */;
 			productType = "com.apple.product-type.app-extension";
 		};
