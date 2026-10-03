@@ -77,9 +77,7 @@ final class ImageCache: @unchecked Sendable {
     }
 
     func memoryImage(for url: URL) -> UIImage? {
-        lock.lock()
-        defer { lock.unlock() }
-        return memoryCache[url]
+        lock.withLock { memoryCache[url] }
     }
 
     func loadImage(for url: URL) async throws -> UIImage {
@@ -114,10 +112,10 @@ final class ImageCache: @unchecked Sendable {
     }
 
     func clearMemoryCache() {
-        lock.lock()
-        memoryCache.removeAll()
-        failures.removeAll()
-        lock.unlock()
+        lock.withLock {
+            memoryCache.removeAll()
+            failures.removeAll()
+        }
     }
 
     func clearDiskCache() async {
@@ -126,30 +124,28 @@ final class ImageCache: @unchecked Sendable {
     }
 
     func cleanup(keeping urls: Set<URL>) async {
-        lock.lock()
-        memoryCache = memoryCache.filter { urls.contains($0.key) }
-        failures = failures.filter { urls.contains($0.key) }
-        lock.unlock()
+        lock.withLock {
+            memoryCache = memoryCache.filter { urls.contains($0.key) }
+            failures = failures.filter { urls.contains($0.key) }
+        }
         await diskCache.cleanup(keeping: urls)
     }
 
     private func failureMessage(for url: URL) -> String? {
-        lock.lock()
-        defer { lock.unlock() }
-        return failures[url]
+        lock.withLock { failures[url] }
     }
 
     private func storeMemory(_ image: UIImage, for url: URL) {
-        lock.lock()
-        memoryCache[url] = image
-        failures.removeValue(forKey: url)
-        lock.unlock()
+        lock.withLock {
+            memoryCache[url] = image
+            failures.removeValue(forKey: url)
+        }
     }
 
     private func storeFailure(_ message: String, for url: URL) {
-        lock.lock()
-        failures[url] = message
-        lock.unlock()
+        lock.withLock {
+            failures[url] = message
+        }
     }
 
     private static func shouldRemember(_ error: Error) -> Bool {
