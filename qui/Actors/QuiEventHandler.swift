@@ -184,6 +184,8 @@ actor QuiEventHandler {
       Logger.urlSession.info("Fetched \(newEvents.count) events")
       Logger.urlSession.info("Fetched \(newSpecialEvents.count) special events")
       
+      await fillMissingSeatGeekImages(newEvents + newSpecialEvents)
+      
       // Get existing events from database
       let descriptor = FetchDescriptor<QuiEvent>()
       let existingEvents = try modelContext.fetch(descriptor)
@@ -361,4 +363,136 @@ actor QuiEventHandler {
       throw URLError(.unknown)
     }
   }
+  
+  /// The events feed currently omits `image_url`. SeatGeek's event payload also
+  /// leaves performer images blank; the performer record still has them.
+  private func fillMissingSeatGeekImages(_ events: [QuiEvent]) async {
+    let targets = events.compactMap { event -> (QuiEvent, String)? in
+      let existing = event.imageURL?.trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
+      guard existing.isEmpty, let eventID = Self.seatGeekEventID(from: event.url) else { return nil }
+      return (event, eventID)
+    }
+    guard !targets.isEmpty else { return }
+    
+    Logger.imageCache.info("SeatGeek feed omitted image_url for \(targets.count) events. Resolving performer images.")
+    
+    let session = urlSession
+    let eventIDs = Set(targets.map(\.1))
+    var performerIDsByEvent: [String: [String]] = [:]
+    await withTaskGroup(of: (String, [String]).self) { group in
+      for eventID in eventIDs {
+        group.addTask {
+          let ids = await Self.performerIDs(forSeatGeekEvent: eventID, session: session)
+          return (eventID, ids)
+        }
+      }
+      for await (eventID, ids) in group {
+        performerIDsByEvent[eventID] = ids
+      }
+    }
+    
+    let performerIDs = Set(performerIDsByEvent.values.flatMap { $0 })
+    var performers: [String: SeatGeekPerformerImage] = [:]
+    await withTaskGroup(of: (String, SeatGeekPerformerImage?).self) { group in
+      for performerID in performerIDs {
+        group.addTask {
+          let performer = await Self.performerImage(for: performerID, session: session)
+          return (performerID, performer)
+        }
+      }
+      for await (performerID, performer) in group {
+        if let performer {
+          performers[performerID] = performer
+        }
+      }
+    }
+    
+    var filled = 0
+    for (event, eventID) in targets {
+      let ids = performerIDsByEvent[eventID] ?? []
+      guard let imageURL = Self.preferredImage(performerIDs: ids, title: event.title, performerNames: event.performers, performers: performers) else {
+        Logger.imageCache.error("No SeatGeek performer image for \(event.title, privacy: .public) (event \(eventID, privacy: .public))")
+        continue
+      }
+      event.imageURL = imageURL
+      filled += 1
+    }
+    
+    Logger.imageCache.info("Resolved SeatGeek images for \(filled) of \(targets.count) events.")
+  }
+  
+  private static func seatGeekEventID(from urlString: String?) -> String? {
+    guard let urlString,
+          let url = URL(string: urlString),
+          let host = url.host?.lowercased(),
+          host == "seatgeek.com" || host.hasSuffix(".seatgeek.com") else {
+      return nil
+    }
+    let identifier = url.lastPathComponent
+    guard !identifier.isEmpty, identifier.allSatisfy(\.isNumber) else { return nil }
+    return identifier
+  }
+  
+  private static func preferredImage(performerIDs: [String], title: String, performerNames: String?, performers: [String: SeatGeekPerformerImage]) -> String? {
+    let candidates = performerIDs.compactMap { performers[$0] }
+    let haystack = "\(title) \(performerNames ?? "")".lowercased()
+    if let match = candidates.first(where: { candidate in
+      let name = candidate.name.lowercased()
+      return !name.isEmpty && haystack.contains(name)
+    }) {
+      return match.imageURL
+    }
+    return candidates.first?.imageURL
+  }
+  
+  private static func performerIDs(forSeatGeekEvent eventID: String, session: URLSession) async -> [String] {
+    guard let url = URL(string: "https://seatgeek.com/data/events/\(eventID)?include=performers"),
+          let data = await seatGeekData(from: url, session: session),
+          let json = try? JSONSerialization.jsonObject(with: data) as? [String: Any],
+          let payload = json["data"] as? [String: Any],
+          let relationships = payload["relationships"] as? [String: Any],
+          let performers = relationships["performers"] as? [String: Any],
+          let list = performers["data"] as? [[String: Any]] else {
+      return []
+    }
+    return list.compactMap { $0["id"] as? String }
+  }
+  
+  private static func performerImage(for performerID: String, session: URLSession) async -> SeatGeekPerformerImage? {
+    guard let url = URL(string: "https://seatgeek.com/data/performers/\(performerID)"),
+          let data = await seatGeekData(from: url, session: session),
+          let json = try? JSONSerialization.jsonObject(with: data) as? [String: Any],
+          let payload = json["data"] as? [String: Any],
+          let attributes = payload["attributes"] as? [String: Any] else {
+      return nil
+    }
+    
+    let name = attributes["name"] as? String ?? ""
+    var imageURL = attributes["image"] as? String ?? ""
+    if imageURL.isEmpty, let images = attributes["images"] as? [String: Any] {
+      imageURL = (images["huge"] as? String) ?? (images["banner"] as? String) ?? ""
+    }
+    guard !imageURL.isEmpty else { return nil }
+    return SeatGeekPerformerImage(name: name, imageURL: imageURL)
+  }
+  
+  private static func seatGeekData(from url: URL, session: URLSession) async -> Data? {
+    var request = URLRequest(url: url)
+    request.setValue("application/vnd.api+json", forHTTPHeaderField: "Accept")
+    do {
+      let (data, response) = try await session.data(for: request)
+      guard let http = response as? HTTPURLResponse, (200..<300).contains(http.statusCode) else {
+        return nil
+      }
+      return data
+    } catch {
+      Logger.imageCache.error("SeatGeek lookup failed for \(url.absoluteString, privacy: .public): \(error.localizedDescription, privacy: .public)")
+      return nil
+    }
+  }
+}
+
+private struct SeatGeekPerformerImage: Sendable {
+  let name: String
+  let imageURL: String
 }
