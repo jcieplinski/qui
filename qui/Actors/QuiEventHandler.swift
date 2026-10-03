@@ -196,10 +196,16 @@ actor QuiEventHandler {
       // Collect URLs of images we want to keep
       var imageURLsToKeep = Set<URL>()
       for event in newEvents + newSpecialEvents + todaysEvents + futureEvents {
-        if let imageURLString = event.imageURL,
-           let imageURL = URL(string: imageURLString) {
-          imageURLsToKeep.insert(imageURL)
+        guard let imageURLString = event.imageURL else { continue }
+        let trimmed = imageURLString.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !trimmed.isEmpty,
+              let imageURL = URL(string: trimmed),
+              let scheme = imageURL.scheme?.lowercased(),
+              scheme == "http" || scheme == "https" else {
+          Logger.imageCache.error("Unusable image URL for \(event.title, privacy: .public): \(imageURLString, privacy: .public)")
+          continue
         }
+        imageURLsToKeep.insert(imageURL)
       }
       
       // Clean up image cache
