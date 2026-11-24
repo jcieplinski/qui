@@ -419,6 +419,9 @@ actor QuiEventHandler {
   }
   
   private static func preferredImage(performers: [SeatGeekPerformerImage], title: String, performerNames: String?) -> String? {
+    if let matchup = matchupImageURL(performers: performers) {
+      return matchup
+    }
     let haystack = "\(title) \(performerNames ?? "")".lowercased()
     if let match = performers.first(where: { candidate in
       let name = candidate.name.lowercased()
@@ -427,6 +430,18 @@ actor QuiEventHandler {
       return match.imageURL
     }
     return performers.first?.imageURL
+  }
+  
+  /// Home team on the right, away team on the left. SeatGeek still generates this
+  /// from the two performer ids even though the event payload leaves it out.
+  private static func matchupImageURL(performers: [SeatGeekPerformerImage]) -> String? {
+    guard let home = performers.first(where: { $0.lineup == "home_team" })?.performerID,
+          let away = performers.first(where: { $0.lineup == "away_team" })?.performerID,
+          !home.isEmpty, !away.isEmpty, home != away,
+          home.allSatisfy(\.isNumber), away.allSatisfy(\.isNumber) else {
+      return nil
+    }
+    return "https://seatgeek.com/images/matchup/v3_f9157faa/\(home)/\(away)/huge.jpg"
   }
   
   private static func performers(forSeatGeekEvent eventID: String, session: URLSession) async -> [SeatGeekPerformerImage] {
@@ -469,7 +484,7 @@ actor QuiEventHandler {
     }
     
     guard !imageURL.isEmpty else { return nil }
-    return SeatGeekPerformerImage(name: name, imageURL: imageURL, lineup: lineup)
+    return SeatGeekPerformerImage(name: name, imageURL: imageURL, lineup: lineup, performerID: id)
   }
   
   private static func lineupRank(_ lineup: String) -> Int {
@@ -501,4 +516,5 @@ private struct SeatGeekPerformerImage: Sendable {
   let name: String
   let imageURL: String
   let lineup: String
+  let performerID: String
 }
