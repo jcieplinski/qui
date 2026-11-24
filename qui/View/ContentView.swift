@@ -17,6 +17,7 @@ struct ContentView: View {
   @State private var events: [QuiEvent] = []
   
   @State private var selectedDate: Date = Date().startOfDayInPacificTime()
+  @State private var selectedSidebarEventID: UUID?
   @State private var currentEvent: QuiEvent?
   @State private var showDatePicker: Bool = false
   @State private var showEventList: Bool = false
@@ -170,7 +171,7 @@ struct ContentView: View {
         loadEvents()
       }
       .onChange(of: selectedDate) {
-        currentEvent = eventsForSelectedDate.first
+        keepCurrentEventOnSelectedDate()
       }
       .background(
         ZStack {
@@ -263,41 +264,46 @@ struct ContentView: View {
   
   @ViewBuilder
   private var sidebarEventsList: some View {
-    List(futureEvents) { event in
-      Button {
-        selectedDate = event.date
-      } label: {
-        HStack(spacing: 12) {
-          CachedAsyncImage(url: URL(string: event.imageURL ?? "")) { image in
-            image
-              .resizable()
-              .scaledToFit()
-              .frame(width: 40, height: 40)
-          } placeholder: {
-            ProgressView()
-              .frame(width: 40, height: 40)
-          }
-          
-          VStack(alignment: .leading, spacing: 4) {
-            Text(event.title)
-              .font(.headline)
-              .foregroundStyle(.primary)
-            if let subtitle = event.subtitle {
-              Text(subtitle)
-                .font(.subheadline)
-                .foregroundStyle(.secondary)
-            }
-            Text(event.date.formatted(date: .abbreviated, time: .shortened))
+    List(futureEvents, id: \.id, selection: $selectedSidebarEventID) { event in
+      HStack(spacing: 12) {
+        CachedAsyncImage(url: URL(string: event.imageURL ?? "")) { image in
+          image
+            .resizable()
+            .scaledToFit()
+            .frame(width: 40, height: 40)
+        } placeholder: {
+          ProgressView()
+            .frame(width: 40, height: 40)
+        }
+        
+        VStack(alignment: .leading, spacing: 4) {
+          Text(event.title)
+            .font(.headline)
+            .foregroundStyle(.primary)
+          if let subtitle = event.subtitle {
+            Text(subtitle)
               .font(.subheadline)
               .foregroundStyle(.secondary)
-            Text(event.location)
-              .font(.caption)
-              .foregroundStyle(.tertiary)
           }
-          
-          Spacer()
+          Text(event.date.formatted(date: .abbreviated, time: .shortened))
+            .font(.subheadline)
+            .foregroundStyle(.secondary)
+          Text(event.location)
+            .font(.caption)
+            .foregroundStyle(.tertiary)
         }
-        .padding(.vertical, 4)
+        
+        Spacer()
+      }
+      .padding(.vertical, 4)
+      .tag(event.id)
+    }
+    .onChange(of: selectedSidebarEventID) { _, newID in
+      selectSidebarEvent(id: newID)
+    }
+    .onChange(of: currentEvent?.id) { _, newID in
+      if selectedSidebarEventID != newID {
+        selectedSidebarEventID = newID
       }
     }
     .navigationTitle("Events")
@@ -405,7 +411,7 @@ struct ContentView: View {
       loadEvents()
     }
     .onChange(of: selectedDate) {
-      currentEvent = eventsForSelectedDate.first
+      keepCurrentEventOnSelectedDate()
     }
     .background(
       ZStack {
@@ -463,6 +469,7 @@ struct ContentView: View {
         
         await MainActor.run {
           events = newEvents
+          syncSidebarSelection()
         }
         
         // If no events and this is the first launch, show loading state
@@ -560,10 +567,45 @@ struct ContentView: View {
       
       await MainActor.run {
         events = newEvents
+        syncSidebarSelection()
       }
     } catch {
       print("Error reloading events: \(error)")
     }
+  }
+  
+  private func keepCurrentEventOnSelectedDate() {
+    let dayEvents = eventsForSelectedDate
+    if let currentEvent, dayEvents.contains(where: { $0.id == currentEvent.id }) {
+      return
+    }
+    currentEvent = dayEvents.first
+  }
+  
+  private func selectSidebarEvent(id: UUID?) {
+    guard let id, let event = events.first(where: { $0.id == id }) else { return }
+    if currentEvent?.id != id {
+      currentEvent = event
+    }
+    let day = pacificStartOfDay(event.date)
+    if pacificStartOfDay(selectedDate) != day {
+      selectedDate = day
+    }
+  }
+  
+  private func syncSidebarSelection() {
+    if currentEvent == nil || !events.contains(where: { $0.id == currentEvent?.id }) {
+      currentEvent = eventsForSelectedDate.first
+    }
+    if selectedSidebarEventID != currentEvent?.id {
+      selectedSidebarEventID = currentEvent?.id
+    }
+  }
+  
+  private func pacificStartOfDay(_ date: Date) -> Date {
+    var calendar = Calendar.current
+    calendar.timeZone = TimeZone(identifier: "America/Los_Angeles")!
+    return calendar.startOfDay(for: date)
   }
   
   private func startMonitoringForUpdates() {
