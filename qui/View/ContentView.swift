@@ -265,6 +265,7 @@ struct ContentView: View {
   @ViewBuilder
   private var sidebarEventsList: some View {
     List(futureEvents, id: \.id, selection: $selectedSidebarEventID) { event in
+      let isCurrent = currentEvent?.id == event.id
       HStack(spacing: 12) {
         CachedAsyncImage(url: URL(string: event.imageURL ?? "")) { image in
           image
@@ -279,24 +280,25 @@ struct ContentView: View {
         VStack(alignment: .leading, spacing: 4) {
           Text(event.title)
             .font(.headline)
-            .foregroundStyle(.primary)
+            .foregroundStyle(isCurrent ? event.eventLocation.textColor : Color.primary)
           if let subtitle = event.subtitle {
             Text(subtitle)
               .font(.subheadline)
-              .foregroundStyle(.secondary)
+              .foregroundStyle(isCurrent ? event.eventLocation.textColor.opacity(0.85) : Color.secondary)
           }
           Text(event.date.formatted(date: .abbreviated, time: .shortened))
             .font(.subheadline)
-            .foregroundStyle(.secondary)
+            .foregroundStyle(isCurrent ? event.eventLocation.textColor.opacity(0.85) : Color.secondary)
           Text(event.location)
             .font(.caption)
-            .foregroundStyle(.tertiary)
+            .foregroundStyle(isCurrent ? event.eventLocation.textColor.opacity(0.7) : Color.secondary)
         }
         
         Spacer()
       }
       .padding(.vertical, 4)
       .tag(event.id)
+      .listRowBackground(isCurrent ? event.eventLocation.backgroundColor : Color.clear)
     }
     .onChange(of: selectedSidebarEventID) { _, newID in
       selectSidebarEvent(id: newID)
