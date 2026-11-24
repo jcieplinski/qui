@@ -364,8 +364,9 @@ actor QuiEventHandler {
     }
   }
   
-  /// The events feed currently omits `image_url`. SeatGeek's event payload also
-  /// leaves performer images blank; the performer record still has them.
+  /// The events feed omits `image_url`, and SeatGeek's performer endpoint no longer
+  /// returns an image. The landscape file is still published from the slug and id
+  /// on the event document.
   private func fillMissingSeatGeekImages(_ events: [QuiEvent]) async {
     let targets = events.compactMap { event -> (QuiEvent, String)? in
       let existing = event.imageURL?.trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
@@ -378,39 +379,23 @@ actor QuiEventHandler {
     
     let session = urlSession
     let eventIDs = Set(targets.map(\.1))
-    var performerIDsByEvent: [String: [String]] = [:]
-    await withTaskGroup(of: (String, [String]).self) { group in
+    var performersByEvent: [String: [SeatGeekPerformerImage]] = [:]
+    await withTaskGroup(of: (String, [SeatGeekPerformerImage]).self) { group in
       for eventID in eventIDs {
         group.addTask {
-          let ids = await Self.performerIDs(forSeatGeekEvent: eventID, session: session)
-          return (eventID, ids)
+          let performers = await Self.performers(forSeatGeekEvent: eventID, session: session)
+          return (eventID, performers)
         }
       }
-      for await (eventID, ids) in group {
-        performerIDsByEvent[eventID] = ids
-      }
-    }
-    
-    let performerIDs = Set(performerIDsByEvent.values.flatMap { $0 })
-    var performers: [String: SeatGeekPerformerImage] = [:]
-    await withTaskGroup(of: (String, SeatGeekPerformerImage?).self) { group in
-      for performerID in performerIDs {
-        group.addTask {
-          let performer = await Self.performerImage(for: performerID, session: session)
-          return (performerID, performer)
-        }
-      }
-      for await (performerID, performer) in group {
-        if let performer {
-          performers[performerID] = performer
-        }
+      for await (eventID, performers) in group {
+        performersByEvent[eventID] = performers
       }
     }
     
     var filled = 0
     for (event, eventID) in targets {
-      let ids = performerIDsByEvent[eventID] ?? []
-      guard let imageURL = Self.preferredImage(performerIDs: ids, title: event.title, performerNames: event.performers, performers: performers) else {
+      let performers = performersByEvent[eventID] ?? []
+      guard let imageURL = Self.preferredImage(performers: performers, title: event.title, performerNames: event.performers) else {
         Logger.imageCache.error("No SeatGeek performer image for \(event.title, privacy: .public) (event \(eventID, privacy: .public))")
         continue
       }
@@ -433,66 +418,67 @@ actor QuiEventHandler {
     return identifier
   }
   
-  private static func preferredImage(performerIDs: [String], title: String, performerNames: String?, performers: [String: SeatGeekPerformerImage]) -> String? {
-    let candidates = performerIDs.compactMap { performers[$0] }
+  private static func preferredImage(performers: [SeatGeekPerformerImage], title: String, performerNames: String?) -> String? {
     let haystack = "\(title) \(performerNames ?? "")".lowercased()
-    if let match = candidates.first(where: { candidate in
+    if let match = performers.first(where: { candidate in
       let name = candidate.name.lowercased()
       return !name.isEmpty && haystack.contains(name)
     }) {
       return match.imageURL
     }
-    return candidates.first?.imageURL
+    return performers.first?.imageURL
   }
   
-  private static func performerIDs(forSeatGeekEvent eventID: String, session: URLSession) async -> [String] {
+  private static func performers(forSeatGeekEvent eventID: String, session: URLSession) async -> [SeatGeekPerformerImage] {
     guard let url = URL(string: "https://seatgeek.com/data/events/\(eventID)?include=performers"),
           let data = await seatGeekData(from: url, session: session),
           let json = try? JSONSerialization.jsonObject(with: data) as? [String: Any],
-          let payload = json["data"] as? [String: Any],
-          let relationships = payload["relationships"] as? [String: Any],
-          let performers = relationships["performers"] as? [String: Any],
-          let list = performers["data"] as? [[String: Any]] else {
+          let included = json["included"] as? [[String: Any]] else {
       return []
     }
-    return list.compactMap { $0["id"] as? String }
+    return included.compactMap(performerImage(from:)).sorted { lineupRank($0.lineup) < lineupRank($1.lineup) }
   }
   
-  private static func performerImage(for performerID: String, session: URLSession) async -> SeatGeekPerformerImage? {
-    guard let url = URL(string: "https://seatgeek.com/data/performers/\(performerID)"),
-          let data = await seatGeekData(from: url, session: session),
-          let json = try? JSONSerialization.jsonObject(with: data) as? [String: Any],
-          let payload = json["data"] as? [String: Any],
-          let attributes = payload["attributes"] as? [String: Any] else {
-      return nil
-    }
-    
+  private static func performerImage(from item: [String: Any]) -> SeatGeekPerformerImage? {
+    guard let id = item["id"] as? String, !id.isEmpty else { return nil }
+    let attributes = item["attributes"] as? [String: Any] ?? [:]
     let name = attributes["name"] as? String ?? ""
-    var imageURL = attributes["image"] as? String ?? ""
+    let slug = (attributes["slug"] as? String ?? "").trimmingCharacters(in: .whitespacesAndNewlines)
+    let lineup = (item["meta"] as? [String: Any])?["lineup"] as? String ?? ""
+    var imageURL = (attributes["image"] as? String ?? "").trimmingCharacters(in: .whitespacesAndNewlines)
     
     if imageURL.isEmpty {
-      // Handle both old dictionary format and new array format
       if let images = attributes["images"] as? [String: Any] {
-        imageURL = (images["huge"] as? String) ?? (images["banner"] as? String) ?? ""
+        imageURL = ((images["huge"] as? String) ?? (images["banner"] as? String) ?? "").trimmingCharacters(in: .whitespacesAndNewlines)
       } else if let imagesArray = attributes["images"] as? [[String: Any]], !imagesArray.isEmpty {
-        // New format: images is an array of image objects
-        // Try to find the largest image
         for imageObj in imagesArray {
           if let size = imageObj["size"] as? String, (size == "huge" || size == "banner"),
-             let urlString = imageObj["url"] as? String {
+             let urlString = imageObj["url"] as? String, !urlString.isEmpty {
             imageURL = urlString
             break
           }
         }
-        // If no huge/banner found, take the first available image
         if imageURL.isEmpty, let firstImage = imagesArray.first, let urlString = firstImage["url"] as? String {
           imageURL = urlString
         }
       }
     }
     
+    if imageURL.isEmpty, !slug.isEmpty, !slug.contains("/"), !slug.contains("..") {
+      imageURL = "https://seatgeek.com/images/performers-landscape/\(slug)/\(id)/huge.jpg"
+    }
+    
     guard !imageURL.isEmpty else { return nil }
-    return SeatGeekPerformerImage(name: name, imageURL: imageURL)
+    return SeatGeekPerformerImage(name: name, imageURL: imageURL, lineup: lineup)
+  }
+  
+  private static func lineupRank(_ lineup: String) -> Int {
+    switch lineup {
+    case "headliner", "home_team":
+      return 0
+    default:
+      return 1
+    }
   }
   
   private static func seatGeekData(from url: URL, session: URLSession) async -> Data? {
@@ -514,4 +500,5 @@ actor QuiEventHandler {
 private struct SeatGeekPerformerImage: Sendable {
   let name: String
   let imageURL: String
+  let lineup: String
 }
