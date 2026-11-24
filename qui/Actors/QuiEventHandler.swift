@@ -469,9 +469,28 @@ actor QuiEventHandler {
     
     let name = attributes["name"] as? String ?? ""
     var imageURL = attributes["image"] as? String ?? ""
-    if imageURL.isEmpty, let images = attributes["images"] as? [String: Any] {
-      imageURL = (images["huge"] as? String) ?? (images["banner"] as? String) ?? ""
+    
+    if imageURL.isEmpty {
+      // Handle both old dictionary format and new array format
+      if let images = attributes["images"] as? [String: Any] {
+        imageURL = (images["huge"] as? String) ?? (images["banner"] as? String) ?? ""
+      } else if let imagesArray = attributes["images"] as? [[String: Any]], !imagesArray.isEmpty {
+        // New format: images is an array of image objects
+        // Try to find the largest image
+        for imageObj in imagesArray {
+          if let size = imageObj["size"] as? String, (size == "huge" || size == "banner"),
+             let urlString = imageObj["url"] as? String {
+            imageURL = urlString
+            break
+          }
+        }
+        // If no huge/banner found, take the first available image
+        if imageURL.isEmpty, let firstImage = imagesArray.first, let urlString = firstImage["url"] as? String {
+          imageURL = urlString
+        }
+      }
     }
+    
     guard !imageURL.isEmpty else { return nil }
     return SeatGeekPerformerImage(name: name, imageURL: imageURL)
   }

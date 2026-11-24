@@ -13,6 +13,7 @@ import EventKitUI
 struct ContentView: View {
   @Environment(\.modelContext) private var modelContext
   @Environment(\.imageCache) private var imageCache
+  @Environment(\.horizontalSizeClass) private var horizontalSizeClass
   @State private var events: [QuiEvent] = []
   
   @State private var selectedDate: Date = Date().startOfDayInPacificTime()
@@ -61,7 +62,26 @@ struct ContentView: View {
     }
   }
   
+  var futureEvents: [QuiEvent] {
+    var calendar = Calendar.current
+    calendar.timeZone = TimeZone(identifier: "America/Los_Angeles")!
+    let today = calendar.startOfDay(for: Date().convertedToPacificTime())
+    
+    return events.filter { event in
+      calendar.startOfDay(for: event.date) >= today
+    }
+  }
+  
   var body: some View {
+    if horizontalSizeClass == .regular {
+      splitNavigationView
+    } else {
+      stackNavigationView
+    }
+  }
+  
+  @ViewBuilder
+  private var stackNavigationView: some View {
     NavigationStack {
       VStack {
         if eventsForSelectedDate.isEmpty {
@@ -229,6 +249,198 @@ struct ContentView: View {
 #if os(iOS)
       .toolbarTitleDisplayMode(.inlineLarge)
 #endif
+    }
+  }
+  
+  @ViewBuilder
+  private var splitNavigationView: some View {
+    NavigationSplitView {
+      sidebarEventsList
+    } detail: {
+      detailContentView
+    }
+  }
+  
+  @ViewBuilder
+  private var sidebarEventsList: some View {
+    List(futureEvents) { event in
+      Button {
+        selectedDate = event.date
+      } label: {
+        HStack(spacing: 12) {
+          CachedAsyncImage(url: URL(string: event.imageURL ?? "")) { image in
+            image
+              .resizable()
+              .scaledToFit()
+              .frame(width: 40, height: 40)
+          } placeholder: {
+            ProgressView()
+              .frame(width: 40, height: 40)
+          }
+          
+          VStack(alignment: .leading, spacing: 4) {
+            Text(event.title)
+              .font(.headline)
+              .foregroundStyle(.primary)
+            if let subtitle = event.subtitle {
+              Text(subtitle)
+                .font(.subheadline)
+                .foregroundStyle(.secondary)
+            }
+            Text(event.date.formatted(date: .abbreviated, time: .shortened))
+              .font(.subheadline)
+              .foregroundStyle(.secondary)
+            Text(event.location)
+              .font(.caption)
+              .foregroundStyle(.tertiary)
+          }
+          
+          Spacer()
+        }
+        .padding(.vertical, 4)
+      }
+    }
+    .navigationTitle("Events")
+    .toolbar {
+      ToolbarItem(placement: .topBarTrailing) {
+        Button {
+          showInfo.toggle()
+        } label: {
+          Image(systemName: "ellipsis")
+        }
+      }
+    }
+    .sheet(isPresented: $showInfo) {
+      InfoView()
+        .presentationBackground(.thinMaterial)
+    }
+  }
+  
+  @ViewBuilder
+  private var detailContentView: some View {
+    VStack {
+      if eventsForSelectedDate.isEmpty {
+        if isInitialFetching {
+          VStack {
+            ProgressView()
+              .scaleEffect(1.5)
+            Text("Loading events...")
+              .font(.caption)
+              .foregroundStyle(.secondary)
+              .padding(.top, 8)
+          }
+          .frame(maxWidth: .infinity, maxHeight: .infinity)
+        } else {
+          NoEventCard(
+            nextEvent: nextEventAfter,
+            selectedDate: $selectedDate
+          )
+          .clipShape(RoundedRectangle(cornerRadius: 28))
+          .shadow(radius: 8)
+          .padding(22)
+        }
+      } else {
+        ScrollView(.horizontal) {
+          HStack {
+            ForEach(eventsForSelectedDate) { event in
+              EventCard(event: event)
+                .clipShape(RoundedRectangle(cornerRadius: 28))
+                .shadow(radius: 8)
+                .containerRelativeFrame(.horizontal, count: 1, spacing: 88)
+                .scrollTransition(.animated, axis: .horizontal) { content, phase in
+                  content
+                    .scaleEffect(phase.isIdentity ? 1 : 0.98)
+                }
+                .id(event)
+            }
+          }
+          .scrollTargetLayout()
+        }
+        .onAppear {
+          currentEvent = eventsForSelectedDate.first
+        }
+        .scrollPosition(id: $currentEvent)
+        .contentMargins(22, for: .scrollContent)
+        .scrollTargetBehavior(.viewAligned)
+        .scrollIndicators(.hidden)
+      }
+      
+      HStack(spacing: 8) {
+        Spacer()
+        
+        HStack(spacing: 4) {
+          Text(lastUpdateText)
+            .font(.caption)
+            .foregroundStyle(.secondary)
+          
+          if isBackgroundRefreshing {
+            Text("(updating...)")
+              .font(.caption)
+              .foregroundStyle(.secondary)
+              .transition(.opacity)
+          }
+        }
+        .animation(.easeInOut(duration: 0.2), value: isBackgroundRefreshing)
+        
+        if events.isEmpty {
+          Button {
+            Task {
+              await refreshEvents()
+            }
+          } label: {
+            Image(systemName: "arrow.clockwise")
+              .font(.caption)
+              .foregroundStyle(.secondary)
+          }
+          .disabled(isRefreshing)
+        }
+        
+        Spacer()
+      }
+    }
+    .onAppear {
+      loadEvents()
+    }
+    .onReceive(NotificationCenter.default.publisher(for: UIApplication.didBecomeActiveNotification)) { _ in
+      loadEvents()
+    }
+    .onChange(of: selectedDate) {
+      currentEvent = eventsForSelectedDate.first
+    }
+    .background(
+      ZStack {
+        Image("backdrop")
+          .saturation(0.2)
+        
+        Rectangle()
+          .foregroundStyle(.ultraThinMaterial)
+        
+        Rectangle()
+          .foregroundStyle(currentEvent?.eventLocation.backgroundColor ?? Color.noEvent)
+          .opacity(0.3)
+      }
+    )
+    .animation(.default, value: currentEvent)
+    .animation(.default, value: selectedDate)
+    .navigationTitle(navigationTitle)
+    .toolbar {
+      ToolbarItemGroup(placement: .bottomBar) {
+        Button {
+          showDatePicker.toggle()
+        } label: {
+          Label("Calendar", systemImage: "calendar")
+        }
+        .sheet(isPresented: $showDatePicker) {
+          DateChooser(
+            selectedDate: $selectedDate,
+            showDatePicker: $showDatePicker,
+            currentEvent: currentEvent
+          )
+          .presentationBackground(.thinMaterial)
+        }
+        
+        Spacer()
+      }
     }
   }
   
